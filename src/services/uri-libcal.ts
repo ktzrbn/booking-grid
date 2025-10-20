@@ -97,20 +97,48 @@ export class URILibCalService {
         try {
           console.log(`🔍 Fetching data for room ${itemId}`)
           // Use the discovered working LibCal API endpoint pattern: /space/item/{id} (singular)
-          const roomData = await this.makeRequest<Record<string, unknown>>(`/space/item/${itemId}`)
+          const apiResponse = await this.makeRequest<Record<string, unknown>[] | Record<string, unknown>>(`/space/item/${itemId}`)
 
-          console.log(`📋 Raw room data for ${itemId}:`, JSON.stringify(roomData, null, 2))
-          console.log(`🔍 Available keys in roomData:`, Object.keys(roomData))
+          console.warn(`📋 RAW API RESPONSE FOR ${itemId}:`)
+          console.warn(JSON.stringify(apiResponse, null, 2))
+          
+          // LibCal returns an array, so we need to extract the first item
+          const roomData = Array.isArray(apiResponse) ? apiResponse[0] : apiResponse
+          
+          if (!roomData) {
+            console.error(`❌ No room data found for ${itemId}`)
+            continue
+          }
+          
+          console.log(`✅ Extracted room data:`, roomData)
+          console.log(`🔍 Available keys:`, Object.keys(roomData))
+          
+          // Show all string fields that might contain the room name
+          const stringFields = Object.entries(roomData)
+            .filter(([, value]) => typeof value === 'string')
+            .map(([key, value]) => `${key}: "${value}"`)
+          console.log(`🏷️ String fields:`, stringFields)
 
-          // Try field extraction with detailed logging
-          const nameResult = this.extractString(roomData, ['name', 'nickname', 'title'])
-          const capacityResult = this.extractNumber(roomData, ['capacity', 'max_capacity', 'seats'])
+          // Try field extraction with detailed logging - expanded field list
+          const nameResult = this.extractString(roomData, [
+            'name', 'nickname', 'title', 'item_name', 'space_name', 'room_name', 
+            'description', 'label', 'display_name', 'public_name'
+          ])
+          const capacityResult = this.extractNumber(roomData, [
+            'capacity', 'max_capacity', 'seats', 'max_occupancy', 'occupancy', 
+            'max_people', 'people_capacity', 'size'
+          ])
           const zoneResult = this.extractZoneFromRoomData(roomData)
 
           console.log(`🏷️ Field extraction results for ${itemId}:`)
           console.log(`  - Name: "${nameResult}" (using fallback: ${!nameResult})`)
           console.log(`  - Capacity: ${capacityResult} (using fallback: ${!capacityResult})`)
           console.log(`  - Zone: "${zoneResult}" (using fallback: ${!zoneResult})`)
+          
+          // If we're still using fallback data, show a warning
+          if (!nameResult || !capacityResult) {
+            console.warn(`⚠️ Room ${itemId} using fallback data - API response may not contain expected fields`)
+          }
 
           // Convert LibCal room data to our Room format
           const room: Room = {
@@ -170,29 +198,39 @@ export class URILibCalService {
       const response = await this.makeRequest<Record<string, unknown>>(
         `/space/bookings?item_id=${itemId}&date=${date}`,
       )
-      console.log(`✅ Got bookings data for room ${itemId}:`, response)
+      
+      console.warn(`📅 RAW BOOKINGS API RESPONSE FOR ${itemId}:`)
+      console.warn(`Found ${Array.isArray(response) ? response.length : 0} total bookings`)
+      
+      // Filter bookings for this specific room using the eid field
+      const allBookings = Array.isArray(response) ? response : []
+      console.warn(`🔍 FILTERING BOOKINGS FOR ROOM ${itemId} FROM ${allBookings.length} TOTAL BOOKINGS`)
+      console.warn(`🔍 SAMPLE BOOKING EIDS:`, allBookings.slice(0, 3).map((b: Record<string, unknown>) => b.eid))
+      
+      const roomBookings = allBookings.filter((booking: Record<string, unknown>) => {
+        const bookingEid = booking.eid?.toString()
+        const matches = bookingEid === itemId
+        if (matches) {
+          console.warn(`✅ FOUND MATCHING BOOKING: eid ${bookingEid} matches room ${itemId}`)
+        }
+        return matches
+      })
+      
+      console.warn(`📊 ROOM ${itemId} HAS ${roomBookings.length} BOOKINGS:`, roomBookings)
+      
+      // Generate hourly time slots and mark them as booked/available
+      const timeSlots = this.generateHourlyTimeSlotsFromBookings(roomBookings)
 
-      // Convert LibCal availability to our format
-      const slots = response && Array.isArray(response.slots) ? response.slots : []
-      const timeSlots =
-        slots.length > 0
-          ? slots.map((slot: Record<string, unknown>) => ({
-              slot: {
-                start: typeof slot.start === 'string' ? slot.start : '09:00',
-                end: typeof slot.end === 'string' ? slot.end : '10:00',
-              },
-              isAvailable: typeof slot.available === 'boolean' ? slot.available : true,
-              bookingId: typeof slot.booking_id === 'string' ? slot.booking_id : undefined,
-            }))
-          : this.generateDefaultTimeSlots()
-
+      console.warn(`✅ RETURNING LIBCAL AVAILABILITY for room ${itemId}: ${timeSlots.filter(ts => !ts.isAvailable).length} booked slots out of ${timeSlots.length} total`)
+      
       return {
         roomId: itemId,
         date: date,
         timeSlots: timeSlots,
       }
     } catch (error) {
-      console.warn(`Failed to fetch availability for room ${itemId} on ${date}:`, error)
+      console.error(`❌ FAILED TO FETCH AVAILABILITY for room ${itemId} on ${date}:`, error)
+      console.error(`🚨 FALLING BACK TO DEFAULT SLOTS (ALL GREEN) - THIS IS WHY NO COLORS SHOW!`)
 
       // Return default availability (all available)
       return {
@@ -354,13 +392,20 @@ export class URILibCalService {
   }
 
   private extractZoneFromRoomData(data: Record<string, unknown>): string | null {
-    // Try to extract zone from various possible fields
-    const zoneFields = ['zone', 'category', 'category_name', 'floor', 'level', 'area']
+    // Try to extract zone from various possible fields - expanded list
+    const zoneFields = [
+      'zone', 'zoneId', 'zone_id', 'category', 'category_name', 'floor', 'level', 'area',
+      'location', 'building', 'wing', 'section', 'department', 'space_type',
+      'room_type', 'item_type', 'group', 'collection'
+    ]
 
     for (const field of zoneFields) {
       const value = data[field]
       if (typeof value === 'string' && value.trim()) {
         return this.mapToZone(value.trim())
+      }
+      if (typeof value === 'number') {
+        return this.mapToZone(value.toString())
       }
       if (typeof value === 'object' && value && 'name' in value) {
         const name = (value as { name?: unknown }).name
@@ -443,6 +488,62 @@ export class URILibCalService {
     ]
     const index = Math.floor(Math.random() * images.length)
     return images[index] ?? images[0]!
+  }
+
+  private generateHourlyTimeSlotsFromBookings(roomBookings: Record<string, unknown>[]) {
+    const slots = []
+    
+    // Generate hourly slots from 8 AM to 10 PM
+    for (let hour = 8; hour < 22; hour++) {
+      const slotStart = `${hour.toString().padStart(2, '0')}:00`
+      const slotEnd = `${(hour + 1).toString().padStart(2, '0')}:00`
+      
+      // Check if this hour is booked by examining all bookings for this room
+      let isBooked = false
+      let bookingId = undefined
+      
+      for (const booking of roomBookings) {
+        // Parse LibCal booking times
+        const fromDate = booking.fromDate as string
+        const toDate = booking.toDate as string
+        
+        if (fromDate && toDate) {
+          // Extract time from LibCal datetime strings like "2025-10-20T00:00:00-04:00"
+          const bookingStart = new Date(fromDate)
+          const bookingEnd = new Date(toDate)
+          
+          // Create time ranges for comparison (same date as booking)
+          const slotStartTime = new Date(bookingStart)
+          slotStartTime.setHours(hour, 0, 0, 0)
+          
+          const slotEndTime = new Date(bookingStart)
+          slotEndTime.setHours(hour + 1, 0, 0, 0)
+          
+          // Check if this slot overlaps with the booking
+          if (slotStartTime < bookingEnd && slotEndTime > bookingStart) {
+            isBooked = true
+            bookingId = booking.id?.toString() || booking.bookId?.toString()
+            console.warn(`🔴 HOUR ${slotStart}-${slotEnd} IS BOOKED (booking: ${bookingId})`)
+            break
+          }
+        }
+      }
+      
+      if (!isBooked) {
+        console.warn(`🟢 HOUR ${slotStart}-${slotEnd} IS AVAILABLE`)
+      }
+      
+      slots.push({
+        slot: {
+          start: slotStart,
+          end: slotEnd,
+        },
+        isAvailable: !isBooked,
+        bookingId: bookingId,
+      })
+    }
+    
+    return slots
   }
 
   private generateDefaultTimeSlots() {

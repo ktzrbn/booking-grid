@@ -172,6 +172,8 @@ import RoomTimelineItem from './RoomTimelineItem.vue'
 
 const store = useBookingStore()
 
+console.warn('📅 TimelineView component mounted!')
+
 // Local reactive state
 const searchQuery = ref('')
 const quickCapacityFilter = ref('1')
@@ -179,9 +181,19 @@ const quickZoneFilter = ref('all')
 
 // Computed properties from store
 const selectedDate = computed(() => store.selectedDate)
+
+// Debug date information
+console.warn(`📅 Current selectedDate from store: ${selectedDate.value}`)
+console.warn(`📅 Raw Date object: ${new Date()}`)
+console.warn(`📅 Raw Date toISOString: ${new Date().toISOString()}`)
+console.warn(`📅 Format function result: ${format(new Date(), 'yyyy-MM-dd')}`)
 const loading = computed(() => store.loading)
 const error = computed(() => store.error)
-const filteredRooms = computed(() => store.filteredRooms)
+const filteredRooms = computed(() => {
+  const rooms = store.filteredRooms
+  console.warn(`🏠 TimelineView filteredRooms: ${rooms.length} rooms`, rooms.map(r => `${r.id}: ${r.name}`))
+  return rooms
+})
 
 // Stats computed properties
 const availableRoomsCount = computed(() => {
@@ -231,14 +243,28 @@ const formatDate = (date: string) => {
   return format(new Date(date), 'EEEE, MMM d, yyyy')
 }
 
-const changeDate = (days: number) => {
+const changeDate = async (days: number) => {
   const currentDate = new Date(selectedDate.value)
   const newDate = addDays(currentDate, days)
-  store.setSelectedDate(format(newDate, 'yyyy-MM-dd'))
+  const newDateStr = format(newDate, 'yyyy-MM-dd')
+  console.warn(`📅 CHANGING DATE TO: ${newDateStr} (${days > 0 ? 'next' : 'previous'} day)`)
+  store.setSelectedDate(newDateStr)
+  
+  // Reload availability data for the new date
+  console.warn(`🔄 Reloading availability data for ${newDateStr}`)
+  await store.loadAvailabilityForDate(newDateStr)
 }
 
-const setToday = () => {
-  store.setSelectedDate(format(new Date(), 'yyyy-MM-dd'))
+const setToday = async () => {
+  // Force correct local date
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  console.warn(`📅 SETTING TO TODAY (FORCED LOCAL): ${todayStr}`)
+  store.setSelectedDate(todayStr)
+  
+  // Reload availability data for today
+  console.warn(`🔄 Reloading availability data for today`)
+  await store.loadAvailabilityForDate(todayStr)
 }
 
 const updateQuickFilter = () => {

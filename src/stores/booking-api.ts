@@ -60,11 +60,8 @@ export const useBookingStore = defineStore('booking', () => {
     } catch (err) {
       error.value = 'Failed to load rooms'
       console.error('Error loading rooms:', err)
-      // Fallback to mock data if API fails
-      const { initializeMockData } = await import('@/data/mockData')
-      const mockData = initializeMockData()
-      rooms.value = mockData.rooms
-      console.warn('Using mock data as fallback')
+      rooms.value = []
+      console.warn('No rooms loaded - check your API configuration')
     } finally {
       loading.value = false
     }
@@ -94,10 +91,8 @@ export const useBookingStore = defineStore('booking', () => {
     } catch (err) {
       error.value = 'Failed to load availability'
       console.error('Error loading availability:', err)
-      // Fallback to mock data if API fails
-      const { generateMockAvailability } = await import('@/data/mockData')
-      availability.value = generateMockAvailability()
-      console.warn('Using mock availability as fallback')
+      availability.value = []
+      console.warn('No availability loaded - check your API configuration')
     } finally {
       loading.value = false
     }
@@ -133,10 +128,8 @@ export const useBookingStore = defineStore('booking', () => {
     } catch (err) {
       error.value = 'Failed to load bookings'
       console.error('Error loading bookings:', err)
-      // Fallback to mock data if API fails
-      const { generateMockBookings } = await import('@/data/mockData')
-      bookings.value = generateMockBookings()
-      console.warn('Using mock bookings as fallback')
+      bookings.value = []
+      console.warn('No bookings loaded - check your API configuration')
     } finally {
       loading.value = false
     }

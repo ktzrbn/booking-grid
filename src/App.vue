@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import BookingGrid from './components/BookingGrid.vue'
-import DebugPanel from './components/DebugPanel.vue'
+import TimelineView from './components/TimelineView.vue'
 import { useBookingStore } from './stores/booking'
 import { uriLibCalService } from './services/uri-libcal'
 import type { Availability } from '@/types'
@@ -34,14 +33,19 @@ onMounted(async () => {
 
       // Load real availability data for all rooms
       console.log('📅 Loading availability for all rooms...')
-      const today = new Date().toISOString().split('T')[0] as string
+      console.log(`🏠 API returned ${apiRooms.length} rooms:`, apiRooms.map(r => `${r.id}: ${r.name}`))
+      const today = store.selectedDate // Use the store's selected date instead of creating a new one
+      console.log(`📅 Using date from store: ${today}`)
       const availabilityData: Availability[] = []
 
       for (const room of apiRooms) {
-        if (!room.id) continue // Skip rooms without valid ID
+        if (!room.id) {
+          console.warn(`⚠️ Skipping room without ID:`, room)
+          continue // Skip rooms without valid ID
+        }
 
         try {
-          console.log(`📅 Loading availability for room ${room.id}`)
+          console.warn(`📅 LOADING AVAILABILITY FOR ROOM ${room.id} (${room.name})`)
           const roomAvailability = await uriLibCalService.getHourlyAvailability(room.id, today)
           availabilityData.push(roomAvailability)
           console.log(
@@ -72,21 +76,25 @@ onMounted(async () => {
       store.bookings = []
       store.availability = availabilityData
 
-      console.log('✅ All availability data loaded:', availabilityData.length, 'rooms')
+      console.warn('✅ ALL AVAILABILITY DATA LOADED:', availabilityData.length, 'rooms')
+      console.warn('📊 STORE AVAILABILITY SAMPLE:', availabilityData.slice(0, 2).map(a => ({
+        roomId: a.roomId,
+        date: a.date,
+        slots: a.timeSlots.length,
+        sampleSlots: a.timeSlots.slice(0, 3).map(ts => `${ts.slot.start}-${ts.slot.end}: ${ts.isAvailable ? 'AVAILABLE' : 'BOOKED'}`)
+      })))
     } else {
-      console.warn('⚠️ API returned no rooms, using mock data')
-      await store.initializeMockData()
+      console.warn('⚠️ API returned no rooms - check your configuration')
+      store.initializeEmpty()
     }
   } catch (error) {
-    console.error('❌ API connection failed, falling back to mock data:', error)
-    alert(`API Connection Failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    console.log('🔄 Falling back to mock data...')
-    await store.initializeMockData()
+    console.error('❌ API connection failed:', error)
+    alert(`API Connection Failed: ${error instanceof Error ? error.message : 'Unknown error'}. Check your .env configuration.`)
+    store.initializeEmpty()
   }
 })
 </script>
 
 <template>
-  <DebugPanel />
-  <BookingGrid />
+  <TimelineView />
 </template>

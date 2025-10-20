@@ -25,7 +25,7 @@
         </li>
       </ul>
       <div style="margin-top: 10px; font-size: 10px; color: #666">
-        <strong>Note:</strong> Check browser console for detailed API response structure
+        <strong>⚠️ Using Generated Names:</strong> If you see "Study Room 17" etc, the LibCal API response doesn't contain expected name fields. Check console for "String fields:" to see available room data fields.
       </div>
     </div>
     <div v-if="error"><strong style="color: red">Error:</strong> {{ error }}</div>

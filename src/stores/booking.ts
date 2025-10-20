@@ -8,7 +8,20 @@ export const useBookingStore = defineStore('booking', () => {
   const rooms = ref<Room[]>([])
   const bookings = ref<Booking[]>([])
   const availability = ref<Availability[]>([])
-  const selectedDate = ref<string>(format(new Date(), 'yyyy-MM-dd'))
+  // Force the current date to be correct by using local date parts
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const todayLocal = `${year}-${month}-${day}`
+  console.log(`🗓️ FORCED Local date: ${todayLocal}`)
+  console.log(`🗓️ Date-fns format result: ${format(now, 'yyyy-MM-dd')}`)
+  console.log(`🕒 Raw Date toString: ${now.toString()}`)
+  
+  // Debug: log the correct date
+  console.log(`✅ Store initialized with CORRECT local date: ${todayLocal}`)
+  
+  const selectedDate = ref<string>(todayLocal)
   const viewMode = ref<ViewMode>('grid')
   const loading = ref<boolean>(false)
   const error = ref<string | null>(null)
@@ -17,7 +30,7 @@ export const useBookingStore = defineStore('booking', () => {
   const filters = ref<FilterOptions>({
     capacity: 1,
     zone: 'all',
-    date: selectedDate.value,
+    date: todayLocal, // Use the same local date value
     amenities: [],
     searchQuery: '',
   })
@@ -118,13 +131,22 @@ export const useBookingStore = defineStore('booking', () => {
     timeSlot: { start: string; end: string },
   ) => {
     const roomAvailability = getRoomAvailability(roomId, date)
-    if (!roomAvailability) return true
+    if (!roomAvailability) {
+      console.warn(`🔍 No availability data for room ${roomId} on ${date}`)
+      return true
+    }
+
+    console.log(`🔍 Checking slot ${timeSlot.start}-${timeSlot.end} for room ${roomId}`)
+    console.log(`📊 Available LibCal slots:`, roomAvailability.timeSlots.map(ts => `${ts.slot.start}-${ts.slot.end}: ${ts.isAvailable ? 'AVAILABLE' : 'BOOKED'}`))
 
     const slot = roomAvailability.timeSlots.find(
       (ts) => ts.slot.start === timeSlot.start && ts.slot.end === timeSlot.end,
     )
 
-    return slot ? slot.isAvailable : true
+    const isAvailable = slot ? slot.isAvailable : true
+    console.log(`✅ Slot ${timeSlot.start}-${timeSlot.end}: ${isAvailable ? 'AVAILABLE' : 'BOOKED'}${slot ? '' : ' (no exact match - defaulting to available)'}`)
+    
+    return isAvailable
   }
 
   const getBookingForSlot = (
@@ -226,14 +248,58 @@ export const useBookingStore = defineStore('booking', () => {
     }
   }
 
-  // Initialize with mock data
-  const initializeMockData = async () => {
+  // Initialize with empty data - no mock data fallback
+  const initializeEmpty = () => {
+    rooms.value = []
+    bookings.value = []
+    availability.value = []
+    loading.value = false
+  }
+
+  // Reload availability data for a specific date
+  const loadAvailabilityForDate = async (date: string) => {
     if (rooms.value.length === 0) {
-      const { initializeMockData: loadMockData } = await import('@/data/mockData')
-      const mockData = loadMockData()
-      rooms.value = mockData.rooms
-      bookings.value = mockData.bookings
-      availability.value = mockData.availability
+      console.warn('⚠️ No rooms loaded, cannot reload availability')
+      return
+    }
+
+    // Import LibCal service dynamically to avoid circular dependency
+    const { uriLibCalService } = await import('@/services/uri-libcal')
+    
+    console.log(`🔄 Reloading availability for ${date}`)
+    loading.value = true
+    error.value = null
+
+    try {
+      const newAvailabilityData = []
+
+      // Remove old availability data for this date
+      availability.value = availability.value.filter(a => a.date !== date)
+
+      for (const room of rooms.value) {
+        if (!room.id) {
+          console.warn(`⚠️ Skipping room without ID:`, room)
+          continue
+        }
+
+        try {
+          console.log(`📅 Loading availability for room ${room.id} (${room.name}) on ${date}`)
+          const roomAvailability = await uriLibCalService.getHourlyAvailability(room.id, date)
+          newAvailabilityData.push(roomAvailability)
+        } catch (roomError) {
+          console.error(`❌ Failed to load availability for room ${room.id}:`, roomError)
+          // Continue with other rooms even if one fails
+        }
+      }
+
+      // Add new availability data
+      availability.value.push(...newAvailabilityData)
+      console.log(`✅ Loaded availability for ${newAvailabilityData.length} rooms on ${date}`)
+
+    } catch (err) {
+      console.error('❌ Failed to reload availability:', err)
+      error.value = 'Failed to reload availability data'
+    } finally {
       loading.value = false
     }
   }
@@ -263,6 +329,7 @@ export const useBookingStore = defineStore('booking', () => {
     getBookingForSlot,
     createBooking,
     cancelBooking,
-    initializeMockData,
+    initializeEmpty,
+    loadAvailabilityForDate,
   }
 })

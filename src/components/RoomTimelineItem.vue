@@ -148,10 +148,12 @@ interface Props {
 const props = defineProps<Props>()
 const store = useBookingStore()
 
+console.warn(`🏠 RoomTimelineItem mounted for room: ${props.room.id} (${props.room.name})`)
+
 // Timeline configuration
 const START_HOUR = 8 // 8 AM
-const END_HOUR = 22 // 10 PM
-const SLOT_MINUTES = 30 // 30-minute slots
+const END_HOUR = 22 // 10 PM  
+const SLOT_MINUTES = 60 // 60-minute slots to match LibCal data
 
 const timelineHours = computed(() => {
   const hours = []
@@ -162,8 +164,12 @@ const timelineHours = computed(() => {
 })
 
 const timelineSlots = computed(() => {
+  console.warn(`🎯 GENERATING TIMELINE SLOTS for room ${props.room.id} on ${props.date}`)
+  console.warn(`🔧 Timeline config: START_HOUR=${START_HOUR}, END_HOUR=${END_HOUR}, SLOT_MINUTES=${SLOT_MINUTES}`)
+  
   const slots = []
   const totalMinutes = (END_HOUR - START_HOUR) * 60
+  console.warn(`📏 Total minutes: ${totalMinutes}, Expected slots: ${totalMinutes / SLOT_MINUTES}`)
 
   for (let minutes = 0; minutes < totalMinutes; minutes += SLOT_MINUTES) {
     const hour = START_HOUR + Math.floor(minutes / 60)
@@ -184,7 +190,7 @@ const timelineSlots = computed(() => {
       end: timeEnd,
     })
 
-    slots.push({
+    const slotData = {
       start: timeStart,
       end: timeEnd,
       isAvailable,
@@ -192,7 +198,19 @@ const timelineSlots = computed(() => {
       leftPosition: (minutes / totalMinutes) * 100,
       width: (SLOT_MINUTES / totalMinutes) * 100,
       tooltip: `${formatTime(timeStart)} - ${formatTime(timeEnd)}${!isAvailable && booking ? ` (${booking.userName})` : ''}`,
-    })
+    }
+    
+    slots.push(slotData)
+    
+    // Log the first few slots to debug
+    if (slots.length <= 3) {
+      console.warn(`🎨 SLOT ${slots.length} for room ${props.room.id}:`, {
+        time: `${timeStart}-${timeEnd}`,
+        isAvailable: isAvailable,
+        color: isAvailable ? 'GREEN' : 'RED', 
+        position: `left: ${slotData.leftPosition}%, width: ${slotData.width}%`
+      })
+    }
   }
 
   return slots

@@ -12,16 +12,16 @@
             <!-- API Status Indicator -->
             <div class="ml-4 text-xs">
               <span
-                v-if="store.rooms.length > 20"
+                v-if="store.rooms.length > 0"
                 class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
               >
-                🟢 API Connected ({{ store.rooms.length }} rooms)
+                🟢 LibCal API ({{ store.rooms.length }} rooms)
               </span>
               <span
                 v-else
-                class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"
+                class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800"
               >
-                🟡 Mock Data ({{ store.rooms.length }} rooms)
+                ❌ No Data (check .env configuration)
               </span>
             </div>
           </div>
